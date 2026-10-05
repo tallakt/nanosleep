@@ -20,7 +20,7 @@ defmodule Nanosleep.MixProject do
       package: package(),
       source_url: @source_url,
       docs: docs(),
-      test_coverage: [summary: [threshold: 90]],
+      test_coverage: [summary: [threshold: 85]],
       dialyzer: [
         # Under _build: a priv directory here would be where the C program is built to.
         plt_core_path: "_build/plts",

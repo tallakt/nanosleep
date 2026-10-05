@@ -171,9 +171,12 @@ defmodule NanosleepTest do
   end
 
   test "a request it doesn't understand ends the program", %{sleeper: sleeper} do
+    # The program may end as the request is still being written: :epipe, as the docs say.
+    Process.flag(:trap_exit, true)
     %{port: port} = sleeper
     Port.command(port, <<1, 2, 3>>)
     assert_receive message, 1000
-    assert Nanosleep.message(sleeper, message) == {:closed, 2}
+    assert {:closed, reason} = Nanosleep.message(sleeper, message)
+    assert reason in [2, :epipe]
   end
 end

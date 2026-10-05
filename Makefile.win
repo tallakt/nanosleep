@@ -1,0 +1,14 @@
+# Builds the port program with MSVC's nmake and cl, which elixir_make uses on Windows,
+# into the application's priv directory.
+
+PREFIX = $(MIX_APP_PATH)\priv
+
+all: $(PREFIX)\nanosleep.exe
+
+$(PREFIX)\nanosleep.exe: c_src\nanosleep.c Makefile.win
+	if not exist "$(PREFIX)" mkdir "$(PREFIX)"
+	cl /nologo /O2 /W3 /std:c11 /Fe"$(PREFIX)\nanosleep.exe" /Fo"$(PREFIX)\nanosleep.obj" c_src\nanosleep.c
+	del "$(PREFIX)\nanosleep.obj"
+
+clean:
+	if exist "$(PREFIX)\nanosleep.exe" del "$(PREFIX)\nanosleep.exe"

@@ -56,15 +56,43 @@ millisecond).
 
 ## How well
 
-On a MacBook (Apple Silicon), in a background session, 300 sleeps each:
+How late a process wakes on a fixed grid, measured with `bench/compare.exs`
+(3000 ticks; lateness in microseconds; run it on your own hardware to see yours).
 
-| asked | late, median | p99 | max |
-|---|---|---|---|
-| 100 µs | 2 µs | 5 µs | 9 µs |
-| 1 ms | 6 µs | 22 µs | 31 µs |
+**Linux**: a Scaleway bare-metal server, 2 × Intel Xeon E5-2620 v2, Debian 13
+with its real-time kernel (6.12, PREEMPT_RT), as root, CPU governor
+`performance` and only shallow idle states (`cpupower idle-set -D 10`):
 
-That's the program's own wake-up; the message then takes some microseconds to
-reach the waiting process, more when the BEAM's schedulers are asleep or busy.
+| 1 ms grid | p50 | p90 | p99 | p99.9 | max |
+|---|---|---|---|---|---|
+| Erlang timer | 1612 | 1614 | 1621 | 1873 | 3849 |
+| nanosleep, not realtime | 64 | 68 | 76 | 99 | 198 |
+| nanosleep | 45 | 48 | 65 | 142 | 217 |
+| nanosleep, spin 250 µs | 0 | 0 | 0 | 1 | 30 |
+
+| 500 µs grid | p50 | p90 | p99 | p99.9 | max |
+|---|---|---|---|---|---|
+| Erlang timer | 1879 | 1912 | 1929 | 1955 | 2198 |
+| nanosleep, not realtime | 61 | 63 | 67 | 103 | 182 |
+| nanosleep | 48 | 53 | 64 | 129 | 204 |
+| nanosleep, spin 250 µs | 0 | 0 | 0 | 2 | 6 |
+
+The same machine with the CPU left as installed (governor `schedutil`, all
+idle states): nanosleep 150 / 199 / 219 / 241 / 293 on the 1 ms grid, and
+with spin 0 / 0 / 2 / 9 / 50. Deep idle states are what make the wake-up slow.
+
+**macOS**: an Apple Silicon MacBook in everyday use, four runs. The medians
+held from run to run; the tail is the desktop's:
+
+| 1 ms grid | p50 | p90 | p99 | max |
+|---|---|---|---|---|
+| Erlang timer | 1338–1495 | 1357–1525 | 1695–4020 | 3802–10546 |
+| nanosleep | 60 | 75–78 | 300–586 | 6411–7111 |
+| nanosleep, spin 250 µs | 0 | 0 | 154–273 | 4192–5796 |
+
+The program itself wakes within microseconds; most of what's left is the BEAM
+delivering its answer, which `spin` takes out of the timing for that much CPU
+per wake-up. Windows works, and hasn't been measured.
 
 ## License
 

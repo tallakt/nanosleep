@@ -66,13 +66,14 @@ defmodule Nanosleep do
 
     * `:realtime` - whether the program asks to be scheduled in real time
       (default true): the time constraint policy on macOS, which any program
-      may have, and SCHED_FIFO at the lowest real-time priority on Linux,
-      which takes root, CAP_SYS_NICE or an rtprio limit. Where that's refused
-      it sleeps as an ordinary process, and wakes later.
-    * `:priority` - on Linux, the SCHED_FIFO priority to ask for instead of
-      the lowest, from 1 to 99. The program has to outrank what would keep it
-      from waking: under a BEAM that is itself scheduled in real time, give
-      it a priority above the BEAM's. A priority that's refused ends the
+      may have, and SCHED_FIFO on Linux, which takes root, CAP_SYS_NICE or an
+      rtprio limit. On Linux it takes the lowest real-time priority, or one
+      above the BEAM's while the BEAM is itself scheduled in real time, since
+      it has to outrank the BEAM to wake on time; it looks at the BEAM's
+      priority again after each sleep, and follows it. Where real time is
+      refused it sleeps as an ordinary process, and wakes later.
+    * `:priority` - on Linux, a SCHED_FIFO priority from 1 to 99 to ask for
+      and keep, whatever the BEAM's is. A priority that's refused ends the
       program with status 3, which its owner gets as `{:closed, 3}` from
       `message/2`. It raises on the other systems, which have no such
       priority to set.
@@ -89,7 +90,7 @@ defmodule Nanosleep do
   defp args(opts) do
     case {Keyword.get(opts, :realtime, true), Keyword.get(opts, :priority)} do
       {true, nil} ->
-        []
+        if :os.type() == {:unix, :linux}, do: ["--above", System.pid()], else: []
 
       {false, nil} ->
         ["--no-realtime"]

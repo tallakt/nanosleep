@@ -15,8 +15,12 @@
  * that's refused it sleeps as an ordinary process. It never runs for long: it sleeps,
  * and writes ten bytes.
  *
- * Started with --priority N on Linux, it asks for SCHED_FIFO at that priority instead of the
- * lowest, which it needs to wake on time under a BEAM that is scheduled in real time itself.
+ * Under a BEAM that is scheduled in real time itself it has to outrank the BEAM, or it waits
+ * for every one of the BEAM's threads before it wakes. Started with --above PID on Linux,
+ * the BEAM's process, it keeps one priority above that process, and looks again after each
+ * answer, since the BEAM's priority is often raised once it is up.
+ *
+ * Started with --priority N on Linux, it asks for SCHED_FIFO at that priority and keeps it.
  * A priority it is refused ends it with status 3: it was asked for, so it doesn't go without.
  */
 
@@ -101,8 +105,37 @@ static void sleep_until(int64_t deadline) {
 #endif
 }
 
+#if defined(__linux__)
+/* The BEAM's process, when started with --above, and the priority asked for last. */
+static pid_t beam;
+static int held;
+
+/* One above the BEAM's priority while that is scheduled in real time, or the lowest. */
+static int outranking(void) {
+  struct sched_param param;
+  int policy = beam > 0 ? sched_getscheduler(beam) : -1;
+  if (policy >= 0) policy &= ~SCHED_RESET_ON_FORK;
+  if ((policy == SCHED_FIFO || policy == SCHED_RR) && sched_getparam(beam, &param) == 0) {
+    int highest = sched_get_priority_max(SCHED_FIFO);
+    return param.sched_priority < highest ? param.sched_priority + 1 : highest;
+  }
+  return sched_get_priority_min(SCHED_FIFO);
+}
+#endif
+
+/* Follows the BEAM when its priority has changed, which takes two system calls to see. */
+static void follow(void) {
+#if defined(__linux__)
+  int priority = beam > 0 ? outranking() : held;
+  if (priority != held) {
+    struct sched_param param = {.sched_priority = held = priority};
+    sched_setscheduler(0, SCHED_FIFO, &param);
+  }
+#endif
+}
+
 /* Whether it got what it asked for. `priority` is the SCHED_FIFO priority on Linux, or 0 for
- * the lowest; the other systems have none to choose. */
+ * one above the BEAM's, or the lowest; the other systems have none to choose. */
 static int realtime(int priority) {
 #if defined(__APPLE__)
   (void)priority;
@@ -116,8 +149,7 @@ static int realtime(int priority) {
                            (thread_policy_t)&policy,
                            THREAD_TIME_CONSTRAINT_POLICY_COUNT) == KERN_SUCCESS;
 #elif defined(__linux__)
-  struct sched_param param = {
-      .sched_priority = priority > 0 ? priority : sched_get_priority_min(SCHED_FIFO)};
+  struct sched_param param = {.sched_priority = held = priority > 0 ? priority : outranking()};
   return sched_setscheduler(0, SCHED_FIFO, &param) == 0;
 #elif defined(_WIN32)
   (void)priority;
@@ -168,6 +200,9 @@ int main(int argc, char **argv) {
   signal(SIGPIPE, SIG_IGN);
 #endif
   int priority = argc > 2 && strcmp(argv[1], "--priority") == 0 ? atoi(argv[2]) : 0;
+#if defined(__linux__)
+  if (argc > 2 && strcmp(argv[1], "--above") == 0) beam = (pid_t)atoi(argv[2]);
+#endif
   if (!(argc > 1 && strcmp(argv[1], "--no-realtime") == 0) && !realtime(priority) && priority > 0)
     return 3;
 
@@ -187,5 +222,6 @@ int main(int argc, char **argv) {
 
     for (int i = 9; i >= 2; i--, slept >>= 8) answer[i] = (unsigned char)slept;
     if (!write_all(answer, sizeof answer)) return 0;
+    follow();
   }
 }

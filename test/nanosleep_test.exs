@@ -119,10 +119,27 @@ defmodule NanosleepTest do
     after
       500 ->
         assert {:ok, _slept} = Nanosleep.sleep(sleeper, 1000)
-        [_pid, stat] = String.split(File.read!("/proc/#{Nanosleep.os_pid(sleeper)}/stat"), ") ")
-        fields = String.split(stat)
-        assert {Enum.at(fields, 38), Enum.at(fields, 37)} == {"1", "2"}
+        assert scheduling(Nanosleep.os_pid(sleeper)) == {1, 2}
     end
+  end
+
+  # The same: where real time is refused, it is an ordinary process, which is policy 0.
+  @tag :linux
+  test "in real time the program is scheduled one above the BEAM, or at the lowest priority", %{
+    sleeper: sleeper
+  } do
+    assert {:ok, _slept} = Nanosleep.sleep(sleeper, 1000)
+    {policy, priority} = scheduling(System.pid())
+    above = if policy in [1, 2], do: min(priority + 1, 99), else: 1
+
+    assert scheduling(Nanosleep.os_pid(sleeper)) in [{1, above}, {0, 0}]
+  end
+
+  # The scheduling policy, 1 for SCHED_FIFO and 2 for SCHED_RR, and the real-time priority.
+  defp scheduling(os_pid) do
+    [_pid, stat] = String.split(File.read!("/proc/#{os_pid}/stat"), ") ")
+    fields = String.split(stat)
+    {String.to_integer(Enum.at(fields, 38)), String.to_integer(Enum.at(fields, 37))}
   end
 
   # These look at the program from outside, with kill.

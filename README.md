@@ -36,13 +36,17 @@ constraint policy on macOS, SCHED_FIFO at the lowest real-time priority on
 Linux (with root, CAP_SYS_NICE or an rtprio limit), and time critical thread
 priority on Windows. It only ever sleeps and answers.
 
-On Linux, `Nanosleep.open(priority: 41)` asks for that SCHED_FIFO priority
-instead of the lowest. The program has to outrank what would keep it from
-waking, and under a BEAM that is itself scheduled in real time that is the
-BEAM: at the lowest priority it waits for every one of the BEAM's threads.
-On a BeagleBone Blue with the BEAM at priority 40, a 10 ms grid was kept
-within 0.8 ms at p99 with the program at priority 1, and within 0.4 ms at 41.
-A priority that is refused ends the program, so that it doesn't go without.
+The program has to outrank what would keep it from waking, and under a BEAM
+that is itself scheduled in real time that is the BEAM: at the lowest priority
+it waits for every one of the BEAM's threads. So on Linux it keeps one
+priority above the BEAM's, and follows it when it changes, as when the BEAM
+is given its priority with `chrt` once it is up. On a BeagleBone Blue with
+the BEAM at priority 40, a 10 ms grid was kept within 0.8 ms at p99 with the
+program at priority 1, and within 0.4 ms at 41.
+
+`Nanosleep.open(priority: 41)` asks for that SCHED_FIFO priority instead, and
+keeps it. A priority that is refused ends the program, so that it doesn't go
+without.
 
 ## Safe to run beside your application
 
@@ -54,7 +58,7 @@ closes or the BEAM goes away.
 ## Installation
 
 ```elixir
-{:nanosleep, "~> 0.2"}
+{:nanosleep, "~> 0.3"}
 ```
 
 It needs a C compiler where it compiles: `cc` and `make` on Linux and macOS,

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+On Linux the program keeps one priority above the BEAM's while the BEAM is
+itself scheduled in real time, and follows it when it changes, so that it
+wakes on time without being given a priority. It took the lowest real-time
+priority before, whatever the BEAM's. `priority:` asks for a fixed one, as it
+did.
+
 ## 0.2.0
 
 `Nanosleep.open/1` takes `priority:` on Linux, the SCHED_FIFO priority the

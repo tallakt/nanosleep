@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0
+
+`Nanosleep.open/1` takes `priority:` on Linux, the SCHED_FIFO priority the
+program asks for instead of the lowest. Under a BEAM that is itself scheduled
+in real time, the program has to outrank it to wake on time. A priority that
+is refused ends the program with status 3, and the option raises on systems
+that have no such priority.
+
 ## 0.1.0
 
 The first release: `Nanosleep.open/1`, `sleep/3`, `sleep_until/3`,

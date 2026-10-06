@@ -91,6 +91,40 @@ defmodule NanosleepTest do
     assert slept >= 1_000_000
   end
 
+  test "a priority is a number from 1 to 99, and goes with real time" do
+    assert_raise ArgumentError, ~r/from 1 to 99, got: 0/, fn -> Nanosleep.open(priority: 0) end
+
+    assert_raise ArgumentError, ~r/from 1 to 99, got: 100/, fn ->
+      Nanosleep.open(priority: 100)
+    end
+
+    assert_raise ArgumentError, ~r/from 1 to 99, got: "2"/, fn ->
+      Nanosleep.open(priority: "2")
+    end
+
+    assert_raise ArgumentError, ~r/realtime: false turns off/, fn ->
+      Nanosleep.open(realtime: false, priority: 2)
+    end
+  end
+
+  # With root, CAP_SYS_NICE or an rtprio limit it gets the priority; without, as on CI, it
+  # ends rather than sleep as an ordinary process.
+  @tag :linux
+  test "the program takes the priority asked for, or ends with status 3 where it's refused" do
+    Process.flag(:trap_exit, true)
+    {:ok, sleeper} = Nanosleep.open(priority: 2)
+
+    receive do
+      message -> assert Nanosleep.message(sleeper, message) == {:closed, 3}
+    after
+      500 ->
+        assert {:ok, _slept} = Nanosleep.sleep(sleeper, 1000)
+        [_pid, stat] = String.split(File.read!("/proc/#{Nanosleep.os_pid(sleeper)}/stat"), ") ")
+        fields = String.split(stat)
+        assert {Enum.at(fields, 38), Enum.at(fields, 37)} == {"1", "2"}
+    end
+  end
+
   # These look at the program from outside, with kill.
   @tag :unix
   test "closing ends the program", %{sleeper: sleeper} do

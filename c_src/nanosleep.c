@@ -14,6 +14,10 @@
  * thread priority on Windows. Where
  * that's refused it sleeps as an ordinary process. It never runs for long: it sleeps,
  * and writes ten bytes.
+ *
+ * Started with --priority N on Linux, it asks for SCHED_FIFO at that priority instead of the
+ * lowest, which it needs to wake on time under a BEAM that is scheduled in real time itself.
+ * A priority it is refused ends it with status 3: it was asked for, so it doesn't go without.
  */
 
 #if defined(_WIN32)
@@ -43,6 +47,7 @@ typedef long long ssize_t;
 #include <errno.h>
 #include <signal.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #if !defined(_WIN32)
@@ -96,21 +101,30 @@ static void sleep_until(int64_t deadline) {
 #endif
 }
 
-static void realtime(void) {
+/* Whether it got what it asked for. `priority` is the SCHED_FIFO priority on Linux, or 0 for
+ * the lowest; the other systems have none to choose. */
+static int realtime(int priority) {
 #if defined(__APPLE__)
+  (void)priority;
   mach_timebase_info_data_t timebase;
   mach_timebase_info(&timebase);
   uint64_t us = 1000ULL * timebase.denom / timebase.numer;
   thread_time_constraint_policy_data_t policy = {
       .period = 0, .computation = (uint32_t)(50 * us), .constraint = (uint32_t)(100 * us),
       .preemptible = 1};
-  thread_policy_set(mach_thread_self(), THREAD_TIME_CONSTRAINT_POLICY, (thread_policy_t)&policy,
-                    THREAD_TIME_CONSTRAINT_POLICY_COUNT);
+  return thread_policy_set(mach_thread_self(), THREAD_TIME_CONSTRAINT_POLICY,
+                           (thread_policy_t)&policy,
+                           THREAD_TIME_CONSTRAINT_POLICY_COUNT) == KERN_SUCCESS;
 #elif defined(__linux__)
-  struct sched_param param = {.sched_priority = sched_get_priority_min(SCHED_FIFO)};
-  sched_setscheduler(0, SCHED_FIFO, &param);
+  struct sched_param param = {
+      .sched_priority = priority > 0 ? priority : sched_get_priority_min(SCHED_FIFO)};
+  return sched_setscheduler(0, SCHED_FIFO, &param) == 0;
 #elif defined(_WIN32)
-  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+  (void)priority;
+  return SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL) != 0;
+#else
+  (void)priority;
+  return 0;
 #endif
 }
 
@@ -153,7 +167,9 @@ int main(int argc, char **argv) {
   /* A write to a closed port ends the program through write_all, not a signal. */
   signal(SIGPIPE, SIG_IGN);
 #endif
-  if (!(argc > 1 && strcmp(argv[1], "--no-realtime") == 0)) realtime();
+  int priority = argc > 2 && strcmp(argv[1], "--priority") == 0 ? atoi(argv[2]) : 0;
+  if (!(argc > 1 && strcmp(argv[1], "--no-realtime") == 0) && !realtime(priority) && priority > 0)
+    return 3;
 
   unsigned char request[10], answer[10] = {0, 8};
 

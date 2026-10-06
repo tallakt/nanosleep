@@ -69,15 +69,46 @@ defmodule Nanosleep do
       may have, and SCHED_FIFO at the lowest real-time priority on Linux,
       which takes root, CAP_SYS_NICE or an rtprio limit. Where that's refused
       it sleeps as an ordinary process, and wakes later.
+    * `:priority` - on Linux, the SCHED_FIFO priority to ask for instead of
+      the lowest, from 1 to 99. The program has to outrank what would keep it
+      from waking: under a BEAM that is itself scheduled in real time, give
+      it a priority above the BEAM's. A priority that's refused ends the
+      program with status 3, which its owner gets as `{:closed, 3}` from
+      `message/2`. It raises on the other systems, which have no such
+      priority to set.
   """
   @spec open(keyword) :: {:ok, t} | {:error, term}
   def open(opts \\ []) do
     path = Application.app_dir(:nanosleep, "priv/nanosleep" <> exe())
-    args = if Keyword.get(opts, :realtime, true), do: [], else: ["--no-realtime"]
-    options = [:binary, {:packet, 2}, :exit_status, :use_stdio, args: args]
+    options = [:binary, {:packet, 2}, :exit_status, :use_stdio, args: args(opts)]
     {:ok, %__MODULE__{port: Port.open({:spawn_executable, path}, options)}}
   rescue
     error in ErlangError -> {:error, error.original}
+  end
+
+  defp args(opts) do
+    case {Keyword.get(opts, :realtime, true), Keyword.get(opts, :priority)} do
+      {true, nil} ->
+        []
+
+      {false, nil} ->
+        ["--no-realtime"]
+
+      {false, _priority} ->
+        raise ArgumentError, "priority: asks for real time, which realtime: false turns off"
+
+      {true, priority} when priority in 1..99 ->
+        if :os.type() != {:unix, :linux} do
+          raise ArgumentError,
+                "priority: is the SCHED_FIFO priority on Linux; this system has none to set"
+        end
+
+        ["--priority", "#{priority}"]
+
+      {true, priority} ->
+        raise ArgumentError,
+              "priority: must be a SCHED_FIFO priority from 1 to 99, got: #{inspect(priority)}"
+    end
   end
 
   defp exe, do: if(match?({:win32, _}, :os.type()), do: ".exe", else: "")
